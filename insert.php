@@ -1,10 +1,13 @@
 <?php
 
 $config = require('./config.php');
+require './Database.php';
+$db = new Database($config['database']);
 
 $conn = new mysqli($config['database']['host'], 'root', '', $config['database']['dbname']);
-$conn->options(MYSQLI_OPT_LOCAL_INFILE, true);
-
+$conn->options(MYSQLI_OPT_LOCAL_INFILE, true);;
+// At the start of your script
+ini_set('memory_limit', '1024M'); // Set to 1GB (use cautiously)
 
 if (isset($_FILES['csv_file'])) {
     // Check for upload errors
@@ -31,45 +34,61 @@ if (isset($_FILES['csv_file'])) {
     }
 
     $content = file_get_contents($filename);
-    $utf8_content = mb_convert_encoding($content, 'UTF-8', 'auto');
+
+    // Better encoding detection and conversion
+    $encodings_to_try = ['UTF-8', 'ISO-8859-1', 'Windows-1252', 'ASCII'];
+    $detected_encoding = mb_detect_encoding($content, $encodings_to_try, true);
+
+    if ($detected_encoding) {
+        $utf8_content = mb_convert_encoding($content, 'UTF-8', $detected_encoding);
+    } else {
+        // Fallback method when detection fails
+        $utf8_content = iconv('UTF-8', 'UTF-8//IGNORE', $content);
+    }
+
     file_put_contents($filename, $utf8_content);
 
     // Create temporary table if not exists
     $table = 'temp_table';
 
     $createTable = "CREATE TABLE `temp_table` (
-	`id` INT NOT NULL AUTO_INCREMENT,
-	`sr` INT NOT NULL,
+	`id` INT(10) NOT NULL AUTO_INCREMENT,
+	`sr` INT(10) NOT NULL,
 	`date` DATE NOT NULL,
-	`academic` TEXT NOT NULL COLLATE 'utf8mb4_0900_ai_ci',
-	`session` TEXT NOT NULL COLLATE 'utf8mb4_0900_ai_ci',
-	`alloted_category` TEXT NOT NULL COLLATE 'utf8mb4_0900_ai_ci',
-	`voucher_type` TEXT NOT NULL COLLATE 'utf8mb4_0900_ai_ci',
-	`voucher_no` TEXT NOT NULL COLLATE 'utf8mb4_0900_ai_ci',
-	`roll_no` TEXT NOT NULL COLLATE 'utf8mb4_0900_ai_ci',
-	`admn_no_unique_id` TEXT NOT NULL COLLATE 'utf8mb4_0900_ai_ci',
-	`status` TEXT NOT NULL COLLATE 'utf8mb4_0900_ai_ci',
-	`fee_status` TEXT NOT NULL COLLATE 'utf8mb4_0900_ai_ci',
-	`faculty` TEXT NOT NULL COLLATE 'utf8mb4_0900_ai_ci',
-	`program` TEXT NOT NULL COLLATE 'utf8mb4_0900_ai_ci',
-	`department` TEXT NOT NULL COLLATE 'utf8mb4_0900_ai_ci',
-	`batch` TEXT NOT NULL COLLATE 'utf8mb4_0900_ai_ci',
-	`receipt_no` TEXT NOT NULL COLLATE 'utf8mb4_0900_ai_ci',
-	`fee_head` TEXT NOT NULL COLLATE 'utf8mb4_0900_ai_ci',
-	`due_amount` INT NOT NULL,
-	`paid_amount` INT NOT NULL,
-	`concession_amount` INT NOT NULL,
-	`scholarship_amount` INT NOT NULL,
-	`reverse_concession_amount` INT NOT NULL,
-	`write_off_amount` INT NOT NULL,
-	`adjusted_amount` INT NOT NULL,
-	`refund_amount` INT NOT NULL,
-	`fund_tranCfer_amount` INT NOT NULL,
+	`academic` VARCHAR(255) NOT NULL COLLATE 'utf8mb4_0900_ai_ci',
+	`session` VARCHAR(255) NOT NULL COLLATE 'utf8mb4_0900_ai_ci',
+	`alloted_category` VARCHAR(255) NOT NULL COLLATE 'utf8mb4_0900_ai_ci',
+	`voucher_type` VARCHAR(255) NOT NULL DEFAULT '' COLLATE 'utf8mb4_0900_ai_ci',
+	`voucher_no` VARCHAR(255) NOT NULL DEFAULT '' COLLATE 'utf8mb4_0900_ai_ci',
+	`roll_no` VARCHAR(255) NOT NULL DEFAULT '' COLLATE 'utf8mb4_0900_ai_ci',
+	`admn_no_unique_id` VARCHAR(255) NOT NULL DEFAULT '' COLLATE 'utf8mb4_0900_ai_ci',
+	`status` VARCHAR(255) NOT NULL DEFAULT '0' COLLATE 'utf8mb4_0900_ai_ci',
+	`fee_status` VARCHAR(255) NOT NULL DEFAULT '0' COLLATE 'utf8mb4_0900_ai_ci',
+	`faculty` VARCHAR(255) NOT NULL DEFAULT '0' COLLATE 'utf8mb4_0900_ai_ci',
+	`program` VARCHAR(255) NOT NULL DEFAULT '0' COLLATE 'utf8mb4_0900_ai_ci',
+	`department` VARCHAR(255) NOT NULL DEFAULT '' COLLATE 'utf8mb4_0900_ai_ci',
+	`batch` VARCHAR(255) NOT NULL DEFAULT '0' COLLATE 'utf8mb4_0900_ai_ci',
+	`receipt_no` VARCHAR(255) NOT NULL DEFAULT '0' COLLATE 'utf8mb4_0900_ai_ci',
+	`fee_head` VARCHAR(255) NOT NULL DEFAULT '0' COLLATE 'utf8mb4_0900_ai_ci',
+	`due_amount` DECIMAL(20,2) NOT NULL DEFAULT '0.00',
+	`paid_amount` DECIMAL(20,2) NOT NULL DEFAULT '0.00',
+	`concession_amount` DECIMAL(20,2) NOT NULL DEFAULT '0.00',
+	`scholarship_amount` DECIMAL(20,2) NOT NULL DEFAULT '0.00',
+	`reverse_concession_amount` DECIMAL(20,2) NOT NULL DEFAULT '0.00',
+	`write_off_amount` DECIMAL(20,2) NOT NULL DEFAULT '0.00',
+	`adjusted_amount` DECIMAL(20,2) NOT NULL DEFAULT '0.00',
+	`refund_amount` DECIMAL(20,2) NOT NULL DEFAULT '0.00',
+	`fund_tranCfer_amount` DECIMAL(20,2) NOT NULL DEFAULT '0.00',
 	`remarks` LONGTEXT NULL DEFAULT NULL COLLATE 'utf8mb4_0900_ai_ci',
-	PRIMARY KEY (`id`) USING BTREE
-        )
-        COLLATE='utf8mb4_0900_ai_ci'
-        ENGINE=InnoDB";
+	PRIMARY KEY (`id`, `admn_no_unique_id`) USING BTREE,
+	INDEX `id` (`id`) USING BTREE,
+	INDEX `sr` (`sr`) USING BTREE,
+	INDEX `admn_no_unique_id` (`admn_no_unique_id`) USING BTREE,
+	INDEX `roll_no` (`roll_no`) USING BTREE
+    )
+    COLLATE='utf8mb4_0900_ai_ci'
+    ENGINE=InnoDB
+    AUTO_INCREMENT=917491";
 
     // First check if the table exists
     $result = $conn->query("SHOW TABLES LIKE '" . $conn->real_escape_string($table) . "'");
@@ -90,17 +109,50 @@ if (isset($_FILES['csv_file'])) {
     $conn->query("ALTER TABLE $table DISABLE KEYS");
 
     // Prepare and execute LOAD DATA INFILE command
-    $query = "LOAD DATA LOCAL INFILE '" . $conn->real_escape_string($filename) . "' 
-                INTO TABLE $table
-                CHARACTER SET utf8mb4
-                FIELDS TERMINATED BY ',' 
-                OPTIONALLY ENCLOSED BY '\"' 
-                LINES TERMINATED BY '\\r\\n'
-                IGNORE 6 LINES
-                (sr, @date_var,academic,session,alloted_category,voucher_type,voucher_no,roll_no,admn_no_unique_id,status,fee_status,faculty,program,department,batch,receipt_no,fee_head,due_amount,paid_amount,concession_amount,scholarship_amount,reverse_concession_amount,write_off_amount,adjusted_amount,refund_amount,fund_tranCfer_amount,remarks)
-                SET date = STR_TO_DATE(@date_var, '%d-%m-%Y')";
+    // $query = "LOAD DATA LOCAL INFILE '" . $conn->real_escape_string($filename) . "' 
+    //             INTO TABLE $table
+    //             FIELDS TERMINATED BY ',' 
+    //             OPTIONALLY ENCLOSED BY '\"' 
+    //             LINES TERMINATED BY '\\r\\n'
+    //             IGNORE 6 LINES
+    //             (sr, @date_var,academic,session,alloted_category,voucher_type,voucher_no,roll_no,admn_no_unique_id,status,fee_status,faculty,program,department,batch,receipt_no,fee_head,due_amount,paid_amount,concession_amount,scholarship_amount,reverse_concession_amount,write_off_amount,adjusted_amount,refund_amount,fund_tranCfer_amount,remarks)
+    //             SET date = STR_TO_DATE(@date_var, '%d-%m-%Y')" $conn->query($query);
 
-    if ($conn->query($query)) {
+    if (true) {
+
+        $branchs = $conn->query("SELECT DISTINCT(t.faculty) FROM temp_table t WHERE t.faculty != ''");
+        $fee_categorys = $conn->query("SELECT DISTINCT(t.fee_status) FROM temp_table t WHERE t.fee_status != ''");
+        $fee_collection_type = ['academic', 'academicmisc', 'hostel', 'hostelmisc', 'transport', 'transportmisc'];
+
+        while ($branch = $branchs->fetch_assoc()) {
+            // Insert into branches table
+            $stmt = $conn->prepare("INSERT INTO `branches` (`branch_name`) VALUES (?)");
+            $stmt->bind_param("s", $branch['faculty']);
+            $stmt->execute();
+
+            $br_id = $conn->insert_id; // Get last inserted ID from branches
+            $stmt->close();
+
+            // Loop through fee categories and insert them
+            $fee_categorys->data_seek(0); // Reset result pointer to reuse the result set
+            while ($fee_category = $fee_categorys->fetch_assoc()) {
+                $stmt2 = $conn->prepare("INSERT INTO `fee_category` (`fee_category`, `br_id`) VALUES (?, ?)");
+                $stmt2->bind_param("si", $fee_category['fee_status'], $br_id);
+                $stmt2->execute();
+                $stmt2->close();
+            }
+
+            $fee_collection_types = ['academic', 'academicmisc', 'hostel', 'hostelmisc', 'transport', 'transportmisc'];
+
+            foreach ($fee_collection_types as $type) {
+                $stmt2 = $conn->prepare("INSERT INTO `fee_collection_type` (`collection_head`, `collection_desc`, `br_id`) VALUES (?,?,?)");
+                $stmt2->bind_param("ssi", $type, $type, $br_id);
+                $stmt2->execute();
+                $stmt2->close();
+            }
+        }
+
+
         echo "Successfully imported " . $conn->affected_rows . " records.";
     } else {
         echo "Error: " . $conn->error;
