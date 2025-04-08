@@ -108,101 +108,191 @@ if (isset($_FILES['csv_file'])) {
     // Disable keys for faster import
     $conn->query("ALTER TABLE $table DISABLE KEYS");
 
+    $startTime = microtime(true); // Start time
+
     // Prepare and execute LOAD DATA INFILE command
-    // $query = "LOAD DATA LOCAL INFILE '" . $conn->real_escape_string($filename) . "' 
-    //             INTO TABLE $table
-    //             FIELDS TERMINATED BY ',' 
-    //             OPTIONALLY ENCLOSED BY '\"' 
-    //             LINES TERMINATED BY '\\r\\n'
-    //             IGNORE 6 LINES
-    //             (sr, @date_var,academic,session,alloted_category,voucher_type,voucher_no,roll_no,admn_no_unique_id,status,fee_status,faculty,program,department,batch,receipt_no,fee_head,due_amount,paid_amount,concession_amount,scholarship_amount,reverse_concession_amount,write_off_amount,adjusted_amount,refund_amount,fund_tranCfer_amount,remarks)
-    //             SET date = STR_TO_DATE(@date_var, '%d-%m-%Y')" $conn->query($query);
+    $query = "LOAD DATA LOCAL INFILE '" . $conn->real_escape_string($filename) . "' 
+                INTO TABLE $table
+                FIELDS TERMINATED BY ',' 
+                OPTIONALLY ENCLOSED BY '\"' 
+                LINES TERMINATED BY '\\r\\n'
+                IGNORE 6 LINES
+                (sr, @date_var,academic,session,alloted_category,voucher_type,voucher_no,roll_no,admn_no_unique_id,status,fee_status,faculty,program,department,batch,receipt_no,fee_head,due_amount,paid_amount,concession_amount,scholarship_amount,reverse_concession_amount,write_off_amount,adjusted_amount,refund_amount,fund_tranCfer_amount,remarks)
+                SET date = STR_TO_DATE(@date_var, '%d-%m-%Y')";
 
-    if (true) {
+    if ($conn->query($query)) {
+        // Disable ONLY_FULL_GROUP_BY mode if enabled
+        $conn->query("SET sql_mode = (SELECT REPLACE(@@sql_mode, 'ONLY_FULL_GROUP_BY', ''))");
 
+        // Fetch required data
         $branchs = $conn->query("SELECT DISTINCT(t.faculty) FROM temp_table t WHERE t.faculty != ''");
         $fee_categorys = $conn->query("SELECT DISTINCT(t.fee_status) FROM temp_table t WHERE t.fee_status != ''");
-        $fee_collection_types = ['academic', 'academicmisc', 'hostel', 'hostelmisc', 'transport', 'transportmisc'];
         $fee_heads = $conn->query("SELECT DISTINCT(t.fee_head) FROM temp_table t");
 
-        $entry_modes = [['entry_modename' => 'due', 'crdr' => 'D', 'entrymodeno' => 0], ['entry_modename' => 'REVDUE', 'crdr' => 'C', 'entrymodeno' => 12]];
-
-        $modules = [['module_name' => 'academic', 'module_id' => 1]];
+        $fee_collection_types = ['academic', 'academicmisc', 'hostel', 'hostelmisc', 'transport', 'transportmisc'];
+        $entry_modes = [
+            ['entry_modename' => 'due', 'crdr' => 'D', 'entrymodeno' => 0],
+            ['entry_modename' => 'REVDUE', 'crdr' => 'C', 'entrymodeno' => 12]
+        ];
+        $modules = [
+            ['module_name' => 'academic', 'module_id' => 1]
+        ];
 
         while ($branch = $branchs->fetch_assoc()) {
-            // Insert into branches table
-            $stmt = $conn->prepare("INSERT INTO `branches` (`branch_name`) VALUES (?)");
-            $stmt->bind_param("s", $branch['faculty']);
-            $stmt->execute();
+            $branch_name = $branch['faculty'];
 
-            $br_id = $conn->insert_id; // Get last inserted ID from branches
+            // Insert into branches
+            $stmt = $conn->prepare("INSERT INTO `branches` (`branch_name`) VALUES (?)");
+            $stmt->bind_param("s", $branch_name);
+            $stmt->execute();
+            $br_id = $conn->insert_id;
             $stmt->close();
 
-            // Loop through fee categories and insert them
-            $fee_categorys->data_seek(0); // Reset result pointer to reuse the result set
+            // Insert fee categories for this branch
+            $fee_categorys->data_seek(0); // reset pointer
             while ($fee_category = $fee_categorys->fetch_assoc()) {
+                $category = $fee_category['fee_status'];
                 $stmt2 = $conn->prepare("INSERT INTO `fee_category` (`fee_category`, `br_id`) VALUES (?, ?)");
-                $stmt2->bind_param("si", $fee_category['fee_status'], $br_id);
+                $stmt2->bind_param("si", $category, $br_id);
                 $stmt2->execute();
                 $stmt2->close();
             }
 
+            // Insert fee collection types (once per branch)
             foreach ($fee_collection_types as $type) {
-                $stmt2 = $conn->prepare("INSERT INTO `fee_collection_type` (`collection_head`, `collection_desc`, `br_id`) VALUES (?,?,?)");
-                $stmt2->bind_param("ssi", $type, $type, $br_id);
-                $stmt2->execute();
-                $stmt2->close();
+                $stmt3 = $conn->prepare("INSERT INTO `fee_collection_type` (`collection_head`, `collection_desc`, `br_id`) VALUES (?, ?, ?)");
+                $stmt3->bind_param("ssi", $type, $type, $br_id);
+                $stmt3->execute();
+                $stmt3->close();
             }
 
-            foreach ($fee_collection_types as $type) {
-                $stmt2 = $conn->prepare("INSERT INTO `fee_collection_type` (`collection_head`, `collection_desc`, `br_id`) VALUES (?,?,?)");
-                $stmt2->bind_param("ssi", $type, $type, $br_id);
-                $stmt2->execute();
-                $stmt2->close();
-            }
+            // Insert fee heads for this branch
+            $fee_heads->data_seek(0); // reset pointer
+            $seq_id = 0;
 
-            $sq = 0;
-            foreach ($fee_heads as $fee_head) {
-                ++$sq;
-
-                $fee_category = 1;
+            while ($fee_head = $fee_heads->fetch_assoc()) {
+                $seq_id++;
                 $f_name = $fee_head['fee_head'];
+                $fee_category_id = 1;
                 $collection_id = 1;
-                $seq_id = $sq;
-                $fee_type_ledger = $fee_head['fee_head'];
+                $fee_type_ledger = $f_name;
                 $fee_headtype = 1;
 
-                $stmt2 = $conn->prepare("INSERT INTO `fee_types` (`fee_category`, `f_name`, `collection_id`, `br_id`, `seq_id`, `fee_type_ledger`, `fee_headtype`) VALUES (?, ?, ?, ?, ?, ?, ?)");
-                $stmt2->bind_param("isiiisi", $fee_category, $f_name, $collection_id, $br_id, $seq_id, $fee_type_ledger, $fee_headtype);
-                $stmt2->execute();
-                $stmt2->close();
+                $stmt4 = $conn->prepare("INSERT INTO `fee_types` (`fee_category`, `f_name`, `collection_id`, `br_id`, `seq_id`, `fee_type_ledger`, `fee_headtype`) VALUES (?, ?, ?, ?, ?, ?, ?)");
+                $stmt4->bind_param("isiiisi", $fee_category_id, $f_name, $collection_id, $br_id, $seq_id, $fee_type_ledger, $fee_headtype);
+                $stmt4->execute();
+                $stmt4->close();
             }
         }
 
+        // Insert entry modes (common)
         foreach ($entry_modes as $entry_mode) {
-            $stmt2 = $conn->prepare("INSERT INTO `entry_mode` (`entry_modename`, `crdr`, `entrymodeno`) VALUES (?,?,?)");
-            $stmt2->bind_param("ssi", $entry_mode['entry_modename'], $entry_mode['crdr'], $entry_mode['entrymodeno']);
-            $stmt2->execute();
-            $stmt2->close();
+            $stmt5 = $conn->prepare("INSERT INTO `entry_mode` (`entry_modename`, `crdr`, `entrymodeno`) VALUES (?, ?, ?)");
+            $stmt5->bind_param("ssi", $entry_mode['entry_modename'], $entry_mode['crdr'], $entry_mode['entrymodeno']);
+            $stmt5->execute();
+            $stmt5->close();
         }
 
+        // Insert modules (common)
         foreach ($modules as $module) {
-            $stmt2 = $conn->prepare("INSERT INTO `module` (`module_name`, `module_id`) VALUES (?,?)");
-            $stmt2->bind_param("si", $module['module_name'], $module['module_id']);
-            $stmt2->execute();
-            $stmt2->close();
+            $stmt6 = $conn->prepare("INSERT INTO `module` (`module_name`, `module_id`) VALUES (?, ?)");
+            $stmt6->bind_param("si", $module['module_name'], $module['module_id']);
+            $stmt6->execute();
+            $stmt6->close();
         }
 
 
-//         SELECT SUM(t.due_amount + t.write_off_amount) AS `amount`, t.admn_no_unique_id AS 'admn_no',t.`date` AS 'trans_date',t.voucher_no,b.id AS 'branch_id',GROUP_CONCAT(t.sr) AS `row`
-// FROM temp_table t 
-// JOIN branches b ON t.faculty = b.branch_name
-// JOIN entry_mode e ON LOWER(e.entry_modename)=LOWER(t.remarks)
-// WHERE t.faculty !='' 
-// GROUP BY t.admn_no_unique_id,t.voucher_no
+        // financial_data -----------------------
+
+        $finencial_trans_data = $conn->query("SELECT SUM(t.due_amount + t.write_off_amount) AS `amount`, t.admn_no_unique_id AS 'admn_no',t.`date` AS 'trans_date',
+        t.voucher_no,e.crdr,b.id AS 'branch_id', GROUP_CONCAT(t.sr) AS `row`,t.`session`
+        FROM temp_table t
+        JOIN branches b ON t.faculty = b.branch_name
+        JOIN entry_mode e ON LOWER(e.entry_modename)= LOWER(t.voucher_type)
+        WHERE t.faculty !=''
+        GROUP BY t.admn_no_unique_id");
 
 
-        echo "Successfully imported " . $conn->affected_rows . " records.";
+        $financialTransValues = [];
+        $financialDetailsValues = [];
+
+        while ($row = $finencial_trans_data->fetch_assoc()) {
+            $financial_trans = rand(100000, 999999);
+            $admn_no = $conn->real_escape_string($row['admn_no']);
+            $amount = (float)$row['amount'];
+            $crdr = $conn->real_escape_string($row['crdr']);
+            $trans_date = $conn->real_escape_string($row['trans_date']);
+            $acad_year = $conn->real_escape_string($row['session']);
+            $entry_mode = 0;
+            $voucher_no = $conn->real_escape_string($row['voucher_no']);
+            $branch_id = (int)$row['branch_id'];
+            $module_id = 1;
+            $sr = $row['row']; // comma-separated list of sr IDs
+
+            // Add to batch insert for financial_trans
+            $financialTransValues[] = "($module_id, $financial_trans, '$admn_no', $amount, '$crdr', '$trans_date', '$acad_year', $entry_mode, '$voucher_no', $branch_id)";
+
+            // Clean and secure the sr list
+            $sr_array = array_map('intval', explode(',', $sr));
+            $sr_list = implode(',', $sr_array);
+
+            // Get related details for financial__trans_details
+            $sql = "SELECT SUM(t.due_amount + t.write_off_amount) AS amount, 
+                   b.branch_name,
+                   b.id AS branch_id,
+                   f.id AS head_id,
+                   f.f_name AS head_name
+            FROM temp_table t
+            JOIN branches b ON t.faculty = b.branch_name
+            JOIN fee_types f ON f.f_name = t.fee_head AND f.br_id = b.id
+            WHERE t.sr IN ($sr_list)
+            GROUP BY t.sr";
+
+            $result = $conn->query($sql);
+
+            if ($result && $result->num_rows > 0) {
+                while ($row2 = $result->fetch_assoc()) {
+                    $child_amount = (float)$row2['amount'];
+                    $child_head_id = (int)$row2['head_id'];
+                    $child_branch_id = (int)$row2['branch_id'];
+                    $child_head_name = $conn->real_escape_string($row2['head_name']);
+                    // Note: Placeholder 'FIN_ID_PLACEHOLDER' to be replaced later
+                    $financialDetailsValues[] = "('FIN_ID_PLACEHOLDER', $module_id, $child_amount, $child_head_id, '$crdr', $child_branch_id, '$child_head_name')";
+                }
+            }
+        }
+
+        // Execute batch insert for financial_trans
+        if (!empty($financialTransValues)) {
+            $sqlTrans = "INSERT INTO `financial_trans` (`module_id`, `trans_id`, `admn_no`, `amount`, `crdr`, `trans_date`, `acad_year`, `entry_mode`, `voucher_no`, `br_id`) VALUES " . implode(',', $financialTransValues);
+            if ($conn->query($sqlTrans)) {
+                $firstInsertId = $conn->insert_id;
+                $affectedRows = $conn->affected_rows;
+
+                // Replace placeholders with actual auto-increment IDs
+                foreach ($financialDetailsValues as &$detail) {
+                    $detail = str_replace('FIN_ID_PLACEHOLDER', $firstInsertId++, $detail);
+                }
+                unset($detail);
+
+                // Batch insert financial__trans_details
+                if (!empty($financialDetailsValues)) {
+                    $sqlDetails = "INSERT INTO `financial__trans_details` (`financial_trans_id`, `module_id`, `amount`, `head_id`, `crdr`, `brid`, `head_name`) VALUES " . implode(',', $financialDetailsValues);
+                    if (!$conn->query($sqlDetails)) {
+                        echo "Detail insert failed: " . $conn->error;
+                    }
+                }
+            } else {
+                echo "Main insert failed: " . $conn->error;
+            }
+        }
+
+
+        $endTime = microtime(true); // End time
+        $executionTime = $endTime - $startTime;
+        echo "Execution Time: " . round($executionTime, 4) . " seconds";
+
+        // echo "Successfully imported " . $conn->affected_rows . " records.";
     } else {
         echo "Error: " . $conn->error;
     }
@@ -210,4 +300,7 @@ if (isset($_FILES['csv_file'])) {
     // Delete the uploaded file after import
     unlink($filename);
 }
+
+
+
 $conn->close();

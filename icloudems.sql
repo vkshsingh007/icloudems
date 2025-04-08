@@ -1,8 +1,8 @@
 -- --------------------------------------------------------
 -- Host:                         127.0.0.1
--- Server version:               8.0.30 - MySQL Community Server - GPL
+-- Server version:               8.4.3 - MySQL Community Server - GPL
 -- Server OS:                    Win64
--- HeidiSQL Version:             12.1.0.6537
+-- HeidiSQL Version:             12.8.0.6908
 -- --------------------------------------------------------
 
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
@@ -21,8 +21,7 @@ CREATE TABLE IF NOT EXISTS `branches` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
--- Dumping data for table icloudems.branches: ~24 rows (approximately)
-DELETE FROM `branches`;
+-- Data exporting was unselected.
 
 -- Dumping structure for table icloudems.entry_mode
 CREATE TABLE IF NOT EXISTS `entry_mode` (
@@ -33,8 +32,7 @@ CREATE TABLE IF NOT EXISTS `entry_mode` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
--- Dumping data for table icloudems.entry_mode: ~2 rows (approximately)
-DELETE FROM `entry_mode`;
+-- Data exporting was unselected.
 
 -- Dumping structure for table icloudems.fee_category
 CREATE TABLE IF NOT EXISTS `fee_category` (
@@ -45,21 +43,7 @@ CREATE TABLE IF NOT EXISTS `fee_category` (
   KEY `FK_fee_category_branches` (`br_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
--- Dumping data for table icloudems.fee_category: ~72 rows (approximately)
-DELETE FROM `fee_category`;
-
--- Dumping structure for table icloudems.fee_collection_type
-CREATE TABLE IF NOT EXISTS `fee_collection_type` (
-  `id` int NOT NULL AUTO_INCREMENT,
-  `collection_head` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL,
-  `collection_desc` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL,
-  `br_id` int NOT NULL,
-  PRIMARY KEY (`id`),
-  KEY `FK_fee_collection_type_branches` (`br_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-
--- Dumping data for table icloudems.fee_collection_type: ~288 rows (approximately)
-DELETE FROM `fee_collection_type`;
+-- Data exporting was unselected.
 
 -- Dumping structure for table icloudems.fee_types
 CREATE TABLE IF NOT EXISTS `fee_types` (
@@ -76,45 +60,41 @@ CREATE TABLE IF NOT EXISTS `fee_types` (
   KEY `FK_fee_types_fee_collection_type` (`collection_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
--- Dumping data for table icloudems.fee_types: ~1,176 rows (approximately)
-DELETE FROM `fee_types`;
+-- Data exporting was unselected.
 
 -- Dumping structure for table icloudems.financial_trans
 CREATE TABLE IF NOT EXISTS `financial_trans` (
   `id` int NOT NULL AUTO_INCREMENT,
-  `module_id` tinyint NOT NULL,
+  `module_id` int NOT NULL DEFAULT (0),
   `trans_id` int NOT NULL,
   `admn_no` text NOT NULL,
   `amount` decimal(20,2) NOT NULL,
   `crdr` char(50) NOT NULL,
   `trans_date` date NOT NULL,
   `acad_year` varchar(255) NOT NULL,
-  `entry_mode` tinyint NOT NULL,
+  `entry_mode` int NOT NULL DEFAULT (0),
   `voucher_no` int NOT NULL,
-  `br_id` tinyint NOT NULL,
+  `br_id` int NOT NULL DEFAULT (0),
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
--- Dumping data for table icloudems.financial_trans: ~0 rows (approximately)
-DELETE FROM `financial_trans`;
+-- Data exporting was unselected.
 
 -- Dumping structure for table icloudems.financial__trans_details
 CREATE TABLE IF NOT EXISTS `financial__trans_details` (
   `id` int NOT NULL AUTO_INCREMENT,
   `financial_trans_id` int NOT NULL,
-  `module_id` tinyint NOT NULL,
+  `module_id` int NOT NULL DEFAULT (0),
   `amount` decimal(20,2) NOT NULL,
-  `head_id` tinyint NOT NULL,
+  `head_id` int NOT NULL DEFAULT (0),
   `crdr` char(50) NOT NULL,
-  `brid` tinyint NOT NULL,
+  `brid` int NOT NULL DEFAULT (0),
   `head_name` varchar(255) NOT NULL,
   PRIMARY KEY (`id`),
-  KEY `FK_financial__trans_details_financial_trans` (`financial_trans_id`),
-  CONSTRAINT `FK_financial__trans_details_financial_trans` FOREIGN KEY (`financial_trans_id`) REFERENCES `financial_trans` (`id`)
+  KEY `FK_financial__trans_details_financial_trans` (`financial_trans_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
--- Dumping data for table icloudems.financial__trans_details: ~0 rows (approximately)
-DELETE FROM `financial__trans_details`;
+-- Data exporting was unselected.
 
 -- Dumping structure for table icloudems.module
 CREATE TABLE IF NOT EXISTS `module` (
@@ -122,12 +102,9 @@ CREATE TABLE IF NOT EXISTS `module` (
   `module_name` varchar(255) NOT NULL,
   `module_id` tinyint NOT NULL,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
--- Dumping data for table icloudems.module: ~0 rows (approximately)
-DELETE FROM `module`;
-INSERT INTO `module` (`id`, `module_name`, `module_id`) VALUES
-	(1, 'academic', 1);
+-- Data exporting was unselected.
 
 -- Dumping structure for table icloudems.temp_table
 CREATE TABLE IF NOT EXISTS `temp_table` (
@@ -167,8 +144,7 @@ CREATE TABLE IF NOT EXISTS `temp_table` (
   KEY `voucher_no` (`voucher_no`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
--- Dumping data for table icloudems.temp_table: ~876,189 rows (approximately)
-DELETE FROM `temp_table`;
+-- Data exporting was unselected.
 
 /*!40103 SET TIME_ZONE=IFNULL(@OLD_TIME_ZONE, 'system') */;
 /*!40101 SET SQL_MODE=IFNULL(@OLD_SQL_MODE, '') */;
