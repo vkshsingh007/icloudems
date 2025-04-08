@@ -122,7 +122,12 @@ if (isset($_FILES['csv_file'])) {
 
         $branchs = $conn->query("SELECT DISTINCT(t.faculty) FROM temp_table t WHERE t.faculty != ''");
         $fee_categorys = $conn->query("SELECT DISTINCT(t.fee_status) FROM temp_table t WHERE t.fee_status != ''");
-        $fee_collection_type = ['academic', 'academicmisc', 'hostel', 'hostelmisc', 'transport', 'transportmisc'];
+        $fee_collection_types = ['academic', 'academicmisc', 'hostel', 'hostelmisc', 'transport', 'transportmisc'];
+        $fee_heads = $conn->query("SELECT DISTINCT(t.fee_head) FROM temp_table t");
+
+        $entry_modes = [['entry_modename' => 'due', 'crdr' => 'D', 'entrymodeno' => 0], ['entry_modename' => 'REVDUE', 'crdr' => 'C', 'entrymodeno' => 12]];
+
+        $modules = [['module_name' => 'academic', 'module_id' => 1]];
 
         while ($branch = $branchs->fetch_assoc()) {
             // Insert into branches table
@@ -142,7 +147,12 @@ if (isset($_FILES['csv_file'])) {
                 $stmt2->close();
             }
 
-            $fee_collection_types = ['academic', 'academicmisc', 'hostel', 'hostelmisc', 'transport', 'transportmisc'];
+            foreach ($fee_collection_types as $type) {
+                $stmt2 = $conn->prepare("INSERT INTO `fee_collection_type` (`collection_head`, `collection_desc`, `br_id`) VALUES (?,?,?)");
+                $stmt2->bind_param("ssi", $type, $type, $br_id);
+                $stmt2->execute();
+                $stmt2->close();
+            }
 
             foreach ($fee_collection_types as $type) {
                 $stmt2 = $conn->prepare("INSERT INTO `fee_collection_type` (`collection_head`, `collection_desc`, `br_id`) VALUES (?,?,?)");
@@ -150,7 +160,46 @@ if (isset($_FILES['csv_file'])) {
                 $stmt2->execute();
                 $stmt2->close();
             }
+
+            $sq = 0;
+            foreach ($fee_heads as $fee_head) {
+                ++$sq;
+
+                $fee_category = 1;
+                $f_name = $fee_head['fee_head'];
+                $collection_id = 1;
+                $seq_id = $sq;
+                $fee_type_ledger = $fee_head['fee_head'];
+                $fee_headtype = 1;
+
+                $stmt2 = $conn->prepare("INSERT INTO `fee_types` (`fee_category`, `f_name`, `collection_id`, `br_id`, `seq_id`, `fee_type_ledger`, `fee_headtype`) VALUES (?, ?, ?, ?, ?, ?, ?)");
+                $stmt2->bind_param("isiiisi", $fee_category, $f_name, $collection_id, $br_id, $seq_id, $fee_type_ledger, $fee_headtype);
+                $stmt2->execute();
+                $stmt2->close();
+            }
         }
+
+        foreach ($entry_modes as $entry_mode) {
+            $stmt2 = $conn->prepare("INSERT INTO `entry_mode` (`entry_modename`, `crdr`, `entrymodeno`) VALUES (?,?,?)");
+            $stmt2->bind_param("ssi", $entry_mode['entry_modename'], $entry_mode['crdr'], $entry_mode['entrymodeno']);
+            $stmt2->execute();
+            $stmt2->close();
+        }
+
+        foreach ($modules as $module) {
+            $stmt2 = $conn->prepare("INSERT INTO `module` (`module_name`, `module_id`) VALUES (?,?)");
+            $stmt2->bind_param("si", $module['module_name'], $module['module_id']);
+            $stmt2->execute();
+            $stmt2->close();
+        }
+
+
+//         SELECT SUM(t.due_amount + t.write_off_amount) AS `amount`, t.admn_no_unique_id AS 'admn_no',t.`date` AS 'trans_date',t.voucher_no,b.id AS 'branch_id',GROUP_CONCAT(t.sr) AS `row`
+// FROM temp_table t 
+// JOIN branches b ON t.faculty = b.branch_name
+// JOIN entry_mode e ON LOWER(e.entry_modename)=LOWER(t.remarks)
+// WHERE t.faculty !='' 
+// GROUP BY t.admn_no_unique_id,t.voucher_no
 
 
         echo "Successfully imported " . $conn->affected_rows . " records.";
