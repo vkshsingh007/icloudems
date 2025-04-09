@@ -6,7 +6,6 @@ $db = new Database($config['database']);
 
 $conn = new mysqli($config['database']['host'], 'root', '', $config['database']['dbname']);
 $conn->options(MYSQLI_OPT_LOCAL_INFILE, true);;
-// At the start of your script
 ini_set('memory_limit', '1024M'); // Set to 1GB (use cautiously)
 
 if (isset($_FILES['csv_file'])) {
@@ -149,7 +148,7 @@ if (isset($_FILES['csv_file'])) {
             $stmt->close();
 
             // Insert fee categories for this branch
-            $fee_categorys->data_seek(0); // reset pointer
+            $fee_categorys->data_seek(0);
             while ($fee_category = $fee_categorys->fetch_assoc()) {
                 $category = $fee_category['fee_status'];
                 $stmt2 = $conn->prepare("INSERT INTO `fee_category` (`fee_category`, `br_id`) VALUES (?, ?)");
@@ -167,7 +166,7 @@ if (isset($_FILES['csv_file'])) {
             }
 
             // Insert fee heads for this branch
-            $fee_heads->data_seek(0); // reset pointer
+            $fee_heads->data_seek(0);
             $seq_id = 0;
 
             while ($fee_head = $fee_heads->fetch_assoc()) {
@@ -232,7 +231,6 @@ if (isset($_FILES['csv_file'])) {
             // Add to batch insert for financial_trans
             $financialTransValues[] = "($module_id, $financial_trans, '$admn_no', $amount, '$crdr', '$trans_date', '$acad_year', $entry_mode, '$voucher_no', $branch_id)";
 
-            // Clean and secure the sr list
             $sr_array = array_map('intval', explode(',', $sr));
             $sr_list = implode(',', $sr_array);
 

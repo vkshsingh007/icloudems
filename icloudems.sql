@@ -45,6 +45,18 @@ CREATE TABLE IF NOT EXISTS `fee_category` (
 
 -- Data exporting was unselected.
 
+-- Dumping structure for table icloudems.fee_collection_type
+CREATE TABLE IF NOT EXISTS `fee_collection_type` (
+  `id` int NOT NULL,
+  `collection_head` varchar(255) NOT NULL,
+  `collection_desc` varchar(255) NOT NULL,
+  `br_id` int NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `id` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- Data exporting was unselected.
+
 -- Dumping structure for table icloudems.fee_types
 CREATE TABLE IF NOT EXISTS `fee_types` (
   `id` int NOT NULL AUTO_INCREMENT,
