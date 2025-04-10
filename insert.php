@@ -212,9 +212,6 @@ if (isset($_FILES['csv_file'])) {
         GROUP BY t.admn_no_unique_id");
 
 
-        $financialTransValues = [];
-        $financialDetailsValues = [];
-
         while ($row = $finencial_trans_data->fetch_assoc()) {
             $financial_trans = rand(100000, 999999);
             $admn_no = $conn->real_escape_string($row['admn_no']);
@@ -228,62 +225,56 @@ if (isset($_FILES['csv_file'])) {
             $module_id = 1;
             $sr = $row['row']; // comma-separated list of sr IDs
 
-            // Add to batch insert for financial_trans
-            $financialTransValues[] = "($module_id, $financial_trans, '$admn_no', $amount, '$crdr', '$trans_date', '$acad_year', $entry_mode, '$voucher_no', $branch_id)";
+            // Insert into financial_trans
+            $sqlTrans = "INSERT INTO `financial_trans` 
+        (`module_id`, `trans_id`, `admn_no`, `amount`, `crdr`, `trans_date`, `acad_year`, `entry_mode`, `voucher_no`, `br_id`) 
+        VALUES 
+        ($module_id, $financial_trans, '$admn_no', $amount, '$crdr', '$trans_date', '$acad_year', $entry_mode, '$voucher_no', $branch_id)";
 
-            $sr_array = array_map('intval', explode(',', $sr));
-            $sr_list = implode(',', $sr_array);
-
-            // Get related details for financial__trans_details
-            $sql = "SELECT SUM(t.due_amount + t.write_off_amount) AS amount, 
-                   b.branch_name,
-                   b.id AS branch_id,
-                   f.id AS head_id,
-                   f.f_name AS head_name
-            FROM temp_table t
-            JOIN branches b ON t.faculty = b.branch_name
-            JOIN fee_types f ON f.f_name = t.fee_head AND f.br_id = b.id
-            WHERE t.sr IN ($sr_list)
-            GROUP BY t.sr";
-
-            $result = $conn->query($sql);
-
-            if ($result && $result->num_rows > 0) {
-                while ($row2 = $result->fetch_assoc()) {
-                    $child_amount = (float)$row2['amount'];
-                    $child_head_id = (int)$row2['head_id'];
-                    $child_branch_id = (int)$row2['branch_id'];
-                    $child_head_name = $conn->real_escape_string($row2['head_name']);
-                    // Note: Placeholder 'FIN_ID_PLACEHOLDER' to be replaced later
-                    $financialDetailsValues[] = "('FIN_ID_PLACEHOLDER', $module_id, $child_amount, $child_head_id, '$crdr', $child_branch_id, '$child_head_name')";
-                }
-            }
-        }
-
-        // Execute batch insert for financial_trans
-        if (!empty($financialTransValues)) {
-            $sqlTrans = "INSERT INTO `financial_trans` (`module_id`, `trans_id`, `admn_no`, `amount`, `crdr`, `trans_date`, `acad_year`, `entry_mode`, `voucher_no`, `br_id`) VALUES " . implode(',', $financialTransValues);
             if ($conn->query($sqlTrans)) {
-                $firstInsertId = $conn->insert_id;
-                $affectedRows = $conn->affected_rows;
+                $lastInsertId = $conn->insert_id;
 
-                // Replace placeholders with actual auto-increment IDs
-                foreach ($financialDetailsValues as &$detail) {
-                    $detail = str_replace('FIN_ID_PLACEHOLDER', $firstInsertId++, $detail);
-                }
-                unset($detail);
+                $sr_array = array_map('intval', explode(',', $sr));
+                $sr_list = implode(',', $sr_array);
 
-                // Batch insert financial__trans_details
-                if (!empty($financialDetailsValues)) {
-                    $sqlDetails = "INSERT INTO `financial__trans_details` (`financial_trans_id`, `module_id`, `amount`, `head_id`, `crdr`, `brid`, `head_name`) VALUES " . implode(',', $financialDetailsValues);
-                    if (!$conn->query($sqlDetails)) {
-                        echo "Detail insert failed: " . $conn->error;
+                $sql = "SELECT SUM(t.due_amount + t.write_off_amount) AS amount, 
+                       b.branch_name,
+                       b.id AS branch_id,
+                       f.id AS head_id,
+                       f.f_name AS head_name
+                FROM temp_table t
+                JOIN branches b ON t.faculty = b.branch_name
+                JOIN fee_types f ON f.f_name = t.fee_head AND f.br_id = b.id
+                WHERE t.sr IN ($sr_list)
+                GROUP BY t.sr";
+
+                $result = $conn->query($sql);
+                $financialDetailsValues = [];
+
+                if ($result && $result->num_rows > 0) {
+                    while ($row2 = $result->fetch_assoc()) {
+                        $child_amount = (float)$row2['amount'];
+                        $child_head_id = (int)$row2['head_id'];
+                        $child_branch_id = (int)$row2['branch_id'];
+                        $child_head_name = $conn->real_escape_string($row2['head_name']);
+
+                        $financialDetailsValues[] = "($lastInsertId, $module_id, $child_amount, $child_head_id, '$crdr', $child_branch_id, '$child_head_name')";
+                    }
+
+                    if (!empty($financialDetailsValues)) {
+                        $sqlDetails = "INSERT INTO `financial__trans_details` 
+                    (`financial_trans_id`, `module_id`, `amount`, `head_id`, `crdr`, `brid`, `head_name`) 
+                    VALUES " . implode(',', $financialDetailsValues);
+                        if (!$conn->query($sqlDetails)) {
+                            echo "Detail insert failed: " . $conn->error;
+                        }
                     }
                 }
             } else {
                 echo "Main insert failed: " . $conn->error;
             }
         }
+
 
 
         $endTime = microtime(true); // End time
