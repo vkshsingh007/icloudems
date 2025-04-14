@@ -6,22 +6,19 @@ $db = new Database($config['database']);
 
 $conn = new mysqli($config['database']['host'], 'root', '', $config['database']['dbname']);
 $conn->options(MYSQLI_OPT_LOCAL_INFILE, true);;
-ini_set('memory_limit', '1024M'); // Set to 1GB (use cautiously)
+ini_set('memory_limit', '1024M'); 
 
 if (isset($_FILES['csv_file'])) {
-    // Check for upload errors
     if ($_FILES['csv_file']['error'] != UPLOAD_ERR_OK) {
         die("Upload error: " . $_FILES['csv_file']['error']);
     }
 
-    // Verify file extension
     $ext = pathinfo($_FILES['csv_file']['name'], PATHINFO_EXTENSION);
 
     if (strtolower($ext) != 'csv') {
         die("Error: Only CSV files are allowed.");
     }
 
-    // Move uploaded file to permanent location
     $uploadDir = 'uploads/';
     if (!is_dir($uploadDir)) {
         mkdir($uploadDir, 0755, true);
@@ -47,7 +44,6 @@ if (isset($_FILES['csv_file'])) {
 
     file_put_contents($filename, $utf8_content);
 
-    // Create temporary table if not exists
     $table = 'temp_table';
 
     $createTable = "CREATE TABLE `temp_table` (
@@ -89,14 +85,12 @@ if (isset($_FILES['csv_file'])) {
     ENGINE=InnoDB
     AUTO_INCREMENT=917491";
 
-    // First check if the table exists
     $result = $conn->query("SHOW TABLES LIKE '" . $conn->real_escape_string($table) . "'");
 
     if ($result === false) {
         throw new Exception("Error checking for table existence: " . $conn->error);
     }
 
-    // If table doesn't exist, create it
     if ($result->num_rows === 0) {
         $createResult = $conn->query($createTable);
 
@@ -104,12 +98,10 @@ if (isset($_FILES['csv_file'])) {
             throw new Exception("Failed to create table '{$table}': " . $conn->error);
         }
     }
-    // Disable keys for faster import
     $conn->query("ALTER TABLE $table DISABLE KEYS");
 
-    $startTime = microtime(true); // Start time
+    $startTime = microtime(true);
 
-    // Prepare and execute LOAD DATA INFILE command
     $query = "LOAD DATA LOCAL INFILE '" . $conn->real_escape_string($filename) . "' 
                 INTO TABLE $table
                 FIELDS TERMINATED BY ',' 
@@ -219,7 +211,7 @@ if (isset($_FILES['csv_file'])) {
             $crdr = $conn->real_escape_string($row['crdr']);
             $trans_date = $conn->real_escape_string($row['trans_date']);
             $acad_year = $conn->real_escape_string($row['session']);
-            $entry_mode = 0;
+            $entry_mode = $conn->real_escape_string($row['crdr']) == 'C' ? 12 : 0;
             $voucher_no = $conn->real_escape_string($row['voucher_no']);
             $branch_id = (int)$row['branch_id'];
             $module_id = 1;
