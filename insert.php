@@ -5,8 +5,9 @@ require './Database.php';
 $db = new Database($config['database']);
 
 $conn = new mysqli($config['database']['host'], 'root', '', $config['database']['dbname']);
-$conn->options(MYSQLI_OPT_LOCAL_INFILE, true);;
-ini_set('memory_limit', '1024M'); 
+$conn->options(MYSQLI_OPT_LOCAL_INFILE, true);
+set_time_limit(0);
+ini_set('memory_limit', '2048M');
 
 if (isset($_FILES['csv_file'])) {
     if ($_FILES['csv_file']['error'] != UPLOAD_ERR_OK) {
@@ -195,77 +196,116 @@ if (isset($_FILES['csv_file'])) {
 
         // financial_data -----------------------
 
-        $finencial_trans_data = $conn->query("SELECT SUM(t.due_amount + t.write_off_amount) AS `amount`, t.admn_no_unique_id AS 'admn_no',t.`date` AS 'trans_date',
-        t.voucher_no,e.crdr,b.id AS 'branch_id', GROUP_CONCAT(t.sr) AS `row`,t.`session`
-        FROM temp_table t
-        JOIN branches b ON t.faculty = b.branch_name
-        JOIN entry_mode e ON LOWER(e.entry_modename)= LOWER(t.voucher_type)
-        WHERE t.faculty !=''
-        GROUP BY t.admn_no_unique_id");
+        // Prepare the connection for batched operations
+        $conn->autocommit(FALSE);
 
+        // Get all financial transaction data at once
+        $finencial_trans_data = $conn->query("SELECT SUM(t.due_amount + t.write_off_amount) AS `amount`, 
+    t.admn_no_unique_id AS 'admn_no', t.`date` AS 'trans_date',
+    t.voucher_no, e.crdr, b.id AS 'branch_id', GROUP_CONCAT(t.sr) AS `row`, t.`session`
+    FROM temp_table t
+    JOIN branches b ON t.faculty = b.branch_name
+    JOIN entry_mode e ON LOWER(e.entry_modename) = LOWER(t.voucher_type)
+    WHERE t.faculty != ''
+    GROUP BY t.voucher_no, t.admn_no_unique_id");
+
+        // Prepare statements for repeated use
+        $stmt_trans = $conn->prepare("INSERT INTO `financial_trans` 
+    (`module_id`, `trans_id`, `admn_no`, `amount`, `crdr`, `trans_date`, `acad_year`, `entry_mode`, `voucher_no`, `br_id`) 
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+
+        $stmt_details = $conn->prepare("INSERT INTO `financial__trans_details` 
+    (`financial_trans_id`, `module_id`, `amount`, `head_id`, `crdr`, `brid`, `head_name`) 
+    VALUES (?, ?, ?, ?, ?, ?, ?)");
+
+        // Batch size for details inserts
+        $batch_size = 1000;
+        $details_batch = [];
+        $batch_count = 0;
 
         while ($row = $finencial_trans_data->fetch_assoc()) {
             $financial_trans = rand(100000, 999999);
-            $admn_no = $conn->real_escape_string($row['admn_no']);
+            $admn_no = $row['admn_no'];
             $amount = (float)$row['amount'];
-            $crdr = $conn->real_escape_string($row['crdr']);
-            $trans_date = $conn->real_escape_string($row['trans_date']);
-            $acad_year = $conn->real_escape_string($row['session']);
-            $entry_mode = $conn->real_escape_string($row['crdr']) == 'C' ? 12 : 0;
-            $voucher_no = $conn->real_escape_string($row['voucher_no']);
+            $crdr = $row['crdr'];
+            $trans_date = $row['trans_date'];
+            $acad_year = $row['session'];
+            $entry_mode = $row['crdr'] == 'C' ? 12 : 0;
+            $voucher_no = $row['voucher_no'];
             $branch_id = (int)$row['branch_id'];
             $module_id = 1;
             $sr = $row['row']; // comma-separated list of sr IDs
 
-            // Insert into financial_trans
-            $sqlTrans = "INSERT INTO `financial_trans` 
-        (`module_id`, `trans_id`, `admn_no`, `amount`, `crdr`, `trans_date`, `acad_year`, `entry_mode`, `voucher_no`, `br_id`) 
-        VALUES 
-        ($module_id, $financial_trans, '$admn_no', $amount, '$crdr', '$trans_date', '$acad_year', $entry_mode, '$voucher_no', $branch_id)";
+            // Insert into financial_trans using prepared statement
+            $stmt_trans->bind_param(
+                "iisdssisis",
+                $module_id,
+                $financial_trans,
+                $admn_no,
+                $amount,
+                $crdr,
+                $trans_date,
+                $acad_year,
+                $entry_mode,
+                $voucher_no,
+                $branch_id
+            );
+            $stmt_trans->execute();
+            $lastInsertId = $conn->insert_id;
 
-            if ($conn->query($sqlTrans)) {
-                $lastInsertId = $conn->insert_id;
+            // Process details in one query instead of looping
+            $sr_array = array_map('intval', explode(',', $sr));
+            $sr_list = implode(',', $sr_array);
 
-                $sr_array = array_map('intval', explode(',', $sr));
-                $sr_list = implode(',', $sr_array);
+            $sql = "SELECT SUM(t.due_amount + t.write_off_amount) AS amount, 
+           b.branch_name, b.id AS branch_id, f.id AS head_id, f.f_name AS head_name
+           FROM temp_table t
+           JOIN branches b ON t.faculty = b.branch_name
+           JOIN fee_types f ON f.f_name = t.fee_head AND f.br_id = b.id
+           WHERE t.sr IN ($sr_list)
+           GROUP BY t.sr";
 
-                $sql = "SELECT SUM(t.due_amount + t.write_off_amount) AS amount, 
-                       b.branch_name,
-                       b.id AS branch_id,
-                       f.id AS head_id,
-                       f.f_name AS head_name
-                FROM temp_table t
-                JOIN branches b ON t.faculty = b.branch_name
-                JOIN fee_types f ON f.f_name = t.fee_head AND f.br_id = b.id
-                WHERE t.sr IN ($sr_list)
-                GROUP BY t.sr";
+            $result = $conn->query($sql);
 
-                $result = $conn->query($sql);
-                $financialDetailsValues = [];
+            if ($result && $result->num_rows > 0) {
+                while ($row2 = $result->fetch_assoc()) {
+                    $child_amount = (float)$row2['amount'];
+                    $child_head_id = (int)$row2['head_id'];
+                    $child_branch_id = (int)$row2['branch_id'];
+                    $child_head_name = $row2['head_name'];
 
-                if ($result && $result->num_rows > 0) {
-                    while ($row2 = $result->fetch_assoc()) {
-                        $child_amount = (float)$row2['amount'];
-                        $child_head_id = (int)$row2['head_id'];
-                        $child_branch_id = (int)$row2['branch_id'];
-                        $child_head_name = $conn->real_escape_string($row2['head_name']);
+                    // Add to batch for details insertion
+                    $stmt_details->bind_param(
+                        "iidisss",
+                        $lastInsertId,
+                        $module_id,
+                        $child_amount,
+                        $child_head_id,
+                        $crdr,
+                        $child_branch_id,
+                        $child_head_name
+                    );
+                    $stmt_details->execute();
 
-                        $financialDetailsValues[] = "($lastInsertId, $module_id, $child_amount, $child_head_id, '$crdr', $child_branch_id, '$child_head_name')";
-                    }
+                    $batch_count++;
 
-                    if (!empty($financialDetailsValues)) {
-                        $sqlDetails = "INSERT INTO `financial__trans_details` 
-                    (`financial_trans_id`, `module_id`, `amount`, `head_id`, `crdr`, `brid`, `head_name`) 
-                    VALUES " . implode(',', $financialDetailsValues);
-                        if (!$conn->query($sqlDetails)) {
-                            echo "Detail insert failed: " . $conn->error;
-                        }
+                    // Commit every batch_size records
+                    if ($batch_count % $batch_size == 0) {
+                        $conn->commit();
                     }
                 }
-            } else {
-                echo "Main insert failed: " . $conn->error;
             }
         }
+
+        // Final commit for any remaining transactions
+        $conn->commit();
+
+        // Close prepared statements
+        $stmt_trans->close();
+        $stmt_details->close();
+
+        // Reset autocommit to true
+        $conn->autocommit(TRUE);
 
 
 
